@@ -20,7 +20,10 @@ function resolveMaybe(p) {
 
 export const config = {
 	port: Number(process.env.PORT ?? 3001),
-	corsOrigin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://localhost:4173')
+	// Daftar origin frontend yang diizinkan, pisahkan koma.
+	// Contoh: "http://localhost:5173,http://127.0.0.1:5173,https://lyco.example.com"
+	// Gunakan "*" hanya untuk API publik tanpa auth (tidak disarankan bila pakai JWT admin).
+	corsOrigin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173')
 		.split(',')
 		.map((s) => s.trim())
 		.filter(Boolean),

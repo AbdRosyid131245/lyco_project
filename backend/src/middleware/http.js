@@ -25,6 +25,15 @@ export function errorHandler(err, _req, res, _next) {
 	if (err?.code === 'INVALID_FILE_TYPE') {
 		return res.status(400).json({ error: 'Tipe file harus JPG, PNG, atau WebP.' });
 	}
+	// Body JSON malformed (body-parser) — kembalikan 400, bukan 500.
+	if (err?.type === 'entity.parse.failed') {
+		return res.status(400).json({ error: 'Format JSON tidak valid.' });
+	}
+	// Teruskan error client (4xx) lain apa adanya, mis. entity.too.large.
+	const status = Number(err?.status ?? err?.statusCode);
+	if (Number.isInteger(status) && status >= 400 && status < 500) {
+		return res.status(status).json({ error: 'Permintaan tidak valid.' });
+	}
 	console.error(err);
 	return res.status(500).json({ error: 'Kesalahan server. Coba lagi.' });
 }

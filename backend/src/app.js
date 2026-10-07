@@ -20,7 +20,38 @@ export function createApp({ dbPath } = {}) {
 	const app = express();
 	app.disable('x-powered-by');
 	app.use(morgan('dev'));
-	app.use(cors({ origin: config.corsOrigin }));
+
+	// CORS: hubungkan backend dengan frontend (SvelteKit/Vite) yang berjalan di origin berbeda.
+	// - Mengizinkan daftar origin dari CORS_ORIGIN (mis. http://localhost:5173 untuk `vite dev`).
+	// - Di development, semua origin localhost/127.0.0.1 (port berapa pun) diizinkan agar
+	//   ganti port Vite (5173/5174/4173/...) tidak kena error CORS.
+	// - allowedHeaders eksplisit agar preflight untuk `Authorization: Bearer <token>`
+	//   (login admin) dan `Content-Type: application/json` selalu lolos.
+	const allowAll = config.corsOrigin.includes('*');
+	const corsOptions = {
+		origin: (origin, callback) => {
+			// Non-browser (curl, Postman, mobile, SSR) tidak mengirim Origin — izinkan.
+			if (!origin) return callback(null, true);
+			if (allowAll) return callback(null, true);
+			if (config.corsOrigin.includes(origin)) return callback(null, true);
+			if (
+				process.env.NODE_ENV !== 'production' &&
+				/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+			) {
+				return callback(null, true);
+			}
+			return callback(null, false);
+		},
+		methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+		allowedHeaders: ['Content-Type', 'Authorization'],
+		exposedHeaders: ['Content-Length'],
+		credentials: false,
+		maxAge: 86400,
+		optionsSuccessStatus: 204
+	};
+	app.use(cors(corsOptions));
+	// Tangani preflight OPTIONS secara eksplisit untuk semua route.
+	app.options('*', cors(corsOptions));
 	app.use(express.json({ limit: '1mb' }));
 	app.use('/uploads', express.static(config.uploadDir));
 
