@@ -1,32 +1,76 @@
-import { api } from '../api.js';
 import { products as defaultProducts, type Product } from './products.js';
 
-/** Data bawaan hanya dipakai sebelum respons API tiba; perubahan selalu dikirim ke server. */
+const STORAGE_KEY = 'lyco:products:v1';
+const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+
+/** Katalog reaktif: dipakai halaman landing & menu agar hasil edit admin langsung tampil. */
 export const catalog = $state<{ items: Product[] }>({ items: defaultProducts });
 
-export async function loadCatalog(): Promise<void> {
-	const result = await api<{ items: Product[]; total: number }>('/api/products?limit=200');
-	catalog.items = result.items; // [] juga sah: jangan tampilkan data bawaan jika DB memang kosong
+function persist(): void {
+	if (!isBrowser) return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(catalog.items));
+	} catch {
+		// Penyimpanan penuh / diblokir: abaikan, data default tetap dipakai
+	}
 }
 
-export async function addProduct(data: Omit<Product, 'id'>): Promise<void> {
-	const product = await api<Product>('/api/products', { method: 'POST', body: JSON.stringify(data) }, true);
-	catalog.items = [...catalog.items, product];
+export function loadCatalog(): void {
+	if (!isBrowser) return;
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) return;
+		const parsed = JSON.parse(raw) as Product[];
+		if (Array.isArray(parsed) && parsed.length > 0) catalog.items = parsed;
+	} catch {
+		// Data rusak: abaikan, data default tetap dipakai
+	}
 }
 
-export async function updateProduct(id: number, data: Omit<Product, 'id'>): Promise<void> {
-	const product = await api<Product>(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }, true);
-	catalog.items = catalog.items.map((item) => item.id === id ? product : item);
+/** Timpa katalog dari backend, sekaligus perbarui cache lokal. */
+export function setCatalog(items: Product[]): void {
+	catalog.items = items;
+	persist();
 }
 
-export async function deleteProduct(id: number): Promise<void> {
-	await api<void>(`/api/products/${id}`, { method: 'DELETE' }, true);
-	catalog.items = catalog.items.filter((item) => item.id !== id);
+if (isBrowser) loadCatalog();
+
+export function addProduct(data: Omit<Product, 'id'>): Product {
+	const id = catalog.items.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+	const item: Product = { ...data, id };
+	catalog.items = [...catalog.items, item];
+	persist();
+	return item;
 }
 
-export async function resetCatalog(): Promise<void> {
-	await api('/api/products/reset', { method: 'POST' }, true);
-	await loadCatalog();
+export function updateProduct(id: number, data: Omit<Product, 'id'>): void {
+	catalog.items = catalog.items.map((p) => (p.id === id ? { ...data, id } : p));
+	persist();
+}
+
+export function deleteProduct(id: number): void {
+	catalog.items = catalog.items.filter((p) => p.id !== id);
+	persist();
+}
+
+export function resetCatalog(): void {
+	catalog.items = defaultProducts;
+	if (isBrowser) {
+		try {
+			localStorage.removeItem(STORAGE_KEY);
+		} catch {
+			// abaikan
+		}
+	}
+}
+
+/** Dipakai saat kategori di-rename dari halaman admin: semua produk ikut pindah nama kategori. */
+export function renameCategoryProducts(oldName: string, newName: string): void {
+	if (oldName === newName) return;
+	catalog.items = catalog.items.map((p) =>
+		p.category === oldName ? { ...p, category: newName } : p
+	);
+	persist();
 }
 
 /** Jumlah produk dalam satu kategori. Dipakai tabel kategori admin. */

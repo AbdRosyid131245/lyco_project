@@ -1,50 +1,107 @@
-import { api } from '../api.js';
 import { categoryOrder } from './products.js';
-import { loadCatalog } from './productsStore.svelte.js';
+
+const STORAGE_KEY = 'lyco:categories:v1';
+const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
 export const defaultCategories: string[] = [...categoryOrder];
+
+/** Daftar kategori reaktif: dipakai halaman menu & form produk agar hasil edit admin langsung tampil. */
 export const categoriesState = $state<{ items: string[] }>({ items: [...defaultCategories] });
 
-type CategoryResponse = { items: { name: string; productCount: number }[] };
-function apply(result: CategoryResponse): void {
-	categoriesState.items = result.items.map((category) => category.name);
+function persist(): void {
+	if (!isBrowser) return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(categoriesState.items));
+	} catch {
+		// abaikan
+	}
 }
 
-export async function loadCategories(): Promise<void> {
-	apply(await api<CategoryResponse>('/api/categories'));
+export function loadCategories(): void {
+	if (!isBrowser) return;
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) return;
+		const parsed = JSON.parse(raw) as unknown;
+		if (Array.isArray(parsed)) {
+			const cleaned = parsed
+				.filter((c): c is string => typeof c === 'string')
+				.map((c) => c.trim())
+				.filter((c) => c.length > 0);
+			// buang duplikat (case-insensitive), pertahankan ejaan pertama
+			const seen = new Set<string>();
+			const unique: string[] = [];
+			for (const c of cleaned) {
+				const key = c.toLowerCase();
+				if (!seen.has(key)) {
+					seen.add(key);
+					unique.push(c);
+				}
+			}
+			if (unique.length > 0) categoriesState.items = unique;
+		}
+	} catch {
+		// abaikan, pakai bawaan
+	}
 }
 
-export async function addCategory(name: string): Promise<void> {
-	apply(await api<CategoryResponse>('/api/categories', {
-		method: 'POST', body: JSON.stringify({ name: name.trim() })
-	}, true));
+if (isBrowser) loadCategories();
+
+/** Timpa daftar kategori dari backend, sekaligus perbarui cache lokal. */
+export function setCategories(names: string[]): void {
+	if (names.length > 0) {
+		categoriesState.items = [...names];
+		persist();
+	}
 }
 
-export async function renameCategory(oldName: string, newName: string): Promise<void> {
-	apply(await api<CategoryResponse>(`/api/categories/${encodeURIComponent(oldName)}`, {
-		method: 'PUT', body: JSON.stringify({ name: newName.trim() })
-	}, true));
-	await loadCatalog(); // backend mengganti nama kategori semua produk secara bersamaan
+export function addCategory(name: string): { ok: boolean; message?: string } {
+	const trimmed = name.trim();
+	if (!trimmed) return { ok: false, message: 'Nama kategori wajib diisi.' };
+	const exists = categoriesState.items.some((c) => c.toLowerCase() === trimmed.toLowerCase());
+	if (exists) return { ok: false, message: `Kategori "${trimmed}" sudah ada.` };
+	categoriesState.items = [...categoriesState.items, trimmed];
+	persist();
+	return { ok: true };
 }
 
-export async function deleteCategory(name: string): Promise<void> {
-	apply(await api<CategoryResponse>(`/api/categories/${encodeURIComponent(name)}`, {
-		method: 'DELETE'
-	}, true));
+export function renameCategory(oldName: string, newName: string): { ok: boolean; message?: string } {
+	const trimmed = newName.trim();
+	if (!trimmed) return { ok: false, message: 'Nama kategori wajib diisi.' };
+	const idx = categoriesState.items.findIndex((c) => c === oldName);
+	if (idx === -1) return { ok: false, message: 'Kategori tidak ditemukan.' };
+	if (oldName.toLowerCase() !== trimmed.toLowerCase()) {
+		const dup = categoriesState.items.some((c) => c.toLowerCase() === trimmed.toLowerCase());
+		if (dup) return { ok: false, message: `Kategori "${trimmed}" sudah ada.` };
+	}
+	categoriesState.items = categoriesState.items.map((c, i) => (i === idx ? trimmed : c));
+	persist();
+	return { ok: true };
 }
 
-export async function moveCategory(name: string, direction: -1 | 1): Promise<void> {
-	const idx = categoriesState.items.indexOf(name);
+export function deleteCategory(name: string): void {
+	categoriesState.items = categoriesState.items.filter((c) => c !== name);
+	persist();
+}
+
+export function moveCategory(name: string, direction: -1 | 1): void {
+	const idx = categoriesState.items.findIndex((c) => c === name);
 	const target = idx + direction;
 	if (idx === -1 || target < 0 || target >= categoriesState.items.length) return;
-	const order = [...categoriesState.items];
-	const [moved] = order.splice(idx, 1);
-	order.splice(target, 0, moved);
-	apply(await api<CategoryResponse>('/api/categories/reorder', {
-		method: 'PUT', body: JSON.stringify({ order })
-	}, true));
+	const next = [...categoriesState.items];
+	const [moved] = next.splice(idx, 1);
+	next.splice(target, 0, moved);
+	categoriesState.items = next;
+	persist();
 }
 
-export async function resetCategories(): Promise<void> {
-	apply(await api<CategoryResponse>('/api/categories/reset', { method: 'POST' }, true));
+export function resetCategories(): void {
+	categoriesState.items = [...defaultCategories];
+	if (isBrowser) {
+		try {
+			localStorage.removeItem(STORAGE_KEY);
+		} catch {
+			// abaikan
+		}
+	}
 }

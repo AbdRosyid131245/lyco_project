@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Menu, ShoppingBasket, X } from '@lucide/svelte';
+	import { getCartCount, openCart } from '#lib/data/cartStore.svelte.js';
 
 	let scrolled = $state(false);
 	let mobileOpen = $state(false);
@@ -7,6 +8,7 @@
 	const navLinks = [
 		{ label: 'Home', href: '/#home' },
 		{ label: 'Menu', href: '/menu' },
+		{ label: 'Pesanan', href: '/pesanan' },
 		{ label: 'Tentang Kami', href: '/#tentang' },
 		{ label: 'Cara Pesan', href: '/#cara-pesan' },
 		{ label: 'Kontak', href: '/#kontak' }
@@ -34,12 +36,13 @@
 >
 	<nav aria-label="Navigasi utama" class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 md:h-20 lg:px-8">
 		<a href="/" aria-label="Lyco - ke beranda" class="flex items-center gap-2.5">
-			<span
-				class="flex h-10 w-10 items-center justify-center rounded-full bg-white font-sans text-xl font-bold text-[#1E2330]"
-				aria-hidden="true"
-			>
-				L
-			</span>
+			<img
+				src="/logo-lyco.jpg"
+				alt="Logo Lyco"
+				width="40"
+				height="40"
+				class="h-10 w-10 rounded-full border border-white/20 object-cover"
+			/>
 			<span class="font-sans text-xl font-semibold tracking-tight text-white">
 				LYCO
 			</span>
@@ -60,18 +63,21 @@
 		</ul>
 
 		<div class="hidden items-center gap-3 lg:flex">
-			<a
-				href="/menu"
+			<button
+				type="button"
+				onclick={openCart}
 				aria-label="Lihat keranjang belanja"
 				class="btn-lyco relative flex h-11 w-11 items-center justify-center rounded-full"
 			>
 				<ShoppingBasket size={20} strokeWidth={1.8} />
-				<span
-					class="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-[#1E2330]"
-				>
-					2
-				</span>
-			</a>
+				{#if getCartCount() > 0}
+					<span
+						class="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-[#1E2330]"
+					>
+						{getCartCount()}
+					</span>
+				{/if}
+			</button>
 			<a
 				href="/menu"
 				class="btn-lyco-solid inline-flex h-11 items-center justify-center px-6 text-[15px] font-semibold"
@@ -82,18 +88,21 @@
 
 		<!-- Mobile actions -->
 		<div class="flex items-center gap-2 lg:hidden">
-			<a
-				href="/menu"
+			<button
+				type="button"
+				onclick={openCart}
 				aria-label="Lihat keranjang belanja"
 				class="btn-lyco relative flex h-10 w-10 items-center justify-center rounded-full"
 			>
 				<ShoppingBasket size={19} strokeWidth={1.8} />
-				<span
-					class="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-[#1E2330]"
-				>
-					2
-				</span>
-			</a>
+				{#if getCartCount() > 0}
+					<span
+						class="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-[#1E2330]"
+					>
+						{getCartCount()}
+					</span>
+				{/if}
+			</button>
 			<button
 				type="button"
 				onclick={() => (mobileOpen = !mobileOpen)}

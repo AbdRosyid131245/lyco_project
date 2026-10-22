@@ -1,4 +1,4 @@
-import { api } from '../api.js';
+const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
 export type SiteSettings = {
 	heroBadge: string;
@@ -19,6 +19,8 @@ export type SiteSettings = {
 	hoursWeekendTime: string;
 };
 
+const STORAGE_KEY = 'lyco:settings:v1';
+
 export const defaultSettings: SiteSettings = {
 	heroBadge: 'LYCO • Coffee and Place',
 	heroTitle: 'LYCO',
@@ -33,8 +35,8 @@ export const defaultSettings: SiteSettings = {
 		'Jl. Syamsul Arifien, Rw. V, Polagan, Kec. Sampang, Kabupaten Sampang, Jawa Timur 60253',
 	mapsUrl:
 		'https://www.google.com/maps/search/?api=1&query=Jl.+Syamsul+Arifien,+Polagan,+Kec.+Sampang,+Kabupaten+Sampang,+Jawa+Timur+60253',
-	phoneDisplay: '+62 274 123 456',
-	phoneHref: 'tel:+62274123456',
+	phoneDisplay: '0889 8983 4160',
+	phoneHref: 'tel:+6288989834160',
 	email: 'halo@lyco.id',
 	hoursWeekdayLabel: 'Senin – Jumat',
 	hoursWeekdayTime: '08.00 – 22.00 WIB',
@@ -42,19 +44,51 @@ export const defaultSettings: SiteSettings = {
 	hoursWeekendTime: '09.00 – 23.00 WIB'
 };
 
-/** Pengaturan reaktif; penulisan hanya berhasil setelah backend menyimpannya. */
+/** Pengaturan landing page yang reaktif + tersimpan di browser. */
 export const site = $state<{ current: SiteSettings }>({ current: defaultSettings });
 
-export async function loadSettings(): Promise<void> {
-	site.current = await api<SiteSettings>('/api/settings');
+export function loadSettings(): void {
+	if (!isBrowser) return;
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) return;
+		const parsed = JSON.parse(raw) as Partial<SiteSettings>;
+		site.current = { ...defaultSettings, ...parsed };
+	} catch {
+		// abaikan
+	}
 }
 
-export async function saveSettings(next: SiteSettings): Promise<void> {
-	site.current = await api<SiteSettings>('/api/settings', {
-		method: 'PUT', body: JSON.stringify(next)
-	}, true);
+if (isBrowser) loadSettings();
+
+/** Timpa settings dari backend, sekaligus perbarui cache lokal. */
+export function applySettings(next: SiteSettings): void {
+	site.current = { ...defaultSettings, ...next };
+	if (!isBrowser) return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(site.current));
+	} catch {
+		// abaikan
+	}
 }
 
-export async function resetSettings(): Promise<void> {
-	site.current = await api<SiteSettings>('/api/settings/reset', { method: 'POST' }, true);
+export function saveSettings(next: SiteSettings): void {
+	site.current = { ...next };
+	if (!isBrowser) return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(site.current));
+	} catch {
+		// abaikan
+	}
+}
+
+export function resetSettings(): void {
+	site.current = { ...defaultSettings };
+	if (isBrowser) {
+		try {
+			localStorage.removeItem(STORAGE_KEY);
+		} catch {
+			// abaikan
+		}
+	}
 }
