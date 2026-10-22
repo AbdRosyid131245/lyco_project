@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ah, validate } from '../middleware/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { categorySchema, renameCategorySchema, reorderCategoriesSchema } from '../schemas.js';
-import { resetCategories } from '../db.js';
+import { seedDatabase } from '../db.js';
 
 function listCategories(db) {
 	const cats = db.prepare('SELECT name FROM categories ORDER BY position ASC, id ASC').all();
@@ -105,7 +105,8 @@ export function categoryRoutes(db) {
 		'/reset',
 		requireAuth,
 		ah(async (_req, res) => {
-			resetCategories(db);
+			db.exec('DELETE FROM products; DELETE FROM categories;');
+			seedDatabase(db);
 			return res.json({ items: listCategories(db) });
 		})
 	);

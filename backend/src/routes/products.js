@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ah, validate } from '../middleware/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { idParamSchema, productQuerySchema, productSchema } from '../schemas.js';
-import { rowToProduct, resetProducts } from '../db.js';
+import { rowToProduct, seedDatabase } from '../db.js';
 
 export function productRoutes(db) {
 	const r = Router();
@@ -51,9 +51,6 @@ export function productRoutes(db) {
 		validate(productSchema),
 		ah(async (req, res) => {
 			const p = req.body;
-			if (!db.prepare('SELECT 1 FROM categories WHERE name = ?').get(p.category)) {
-				return res.status(409).json({ error: `Kategori "${p.category}" tidak ditemukan.` });
-			}
 			const info = db
 				.prepare(
 					'INSERT INTO products (name, description, price, image, category, featured) VALUES (?, ?, ?, ?, ?, ?)'
@@ -73,9 +70,6 @@ export function productRoutes(db) {
 			const exists = db.prepare('SELECT id FROM products WHERE id = ?').get(req.params.id);
 			if (!exists) return res.status(404).json({ error: 'Produk tidak ditemukan.' });
 			const p = req.body;
-			if (!db.prepare('SELECT 1 FROM categories WHERE name = ?').get(p.category)) {
-				return res.status(409).json({ error: `Kategori "${p.category}" tidak ditemukan.` });
-			}
 			db.prepare(
 				"UPDATE products SET name = ?, description = ?, price = ?, image = ?, category = ?, featured = ?, updated_at = datetime('now') WHERE id = ?"
 			).run(p.name, p.description, p.price, p.image, p.category, p.featured ? 1 : 0, req.params.id);
@@ -100,7 +94,8 @@ export function productRoutes(db) {
 		'/reset',
 		requireAuth,
 		ah(async (_req, res) => {
-			resetProducts(db);
+			db.exec('DELETE FROM products; DELETE FROM categories;');
+			seedDatabase(db);
 			const total = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
 			return res.json({ ok: true, total });
 		})

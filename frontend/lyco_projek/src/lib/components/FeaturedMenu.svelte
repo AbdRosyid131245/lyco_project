@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { ArrowRight, Plus } from '@lucide/svelte';
-	import { imageUrl } from '#lib/api.js';
 	import { formatRupiah } from '#lib/data/products.js';
 	import { catalog } from '#lib/data/productsStore.svelte.js';
+	import { addToCart } from '#lib/data/cartStore.svelte.js';
+	import { resolveImage } from '#lib/api.js';
 
 	const featured = $derived(catalog.items.filter((p) => p.featured));
 </script>
@@ -40,7 +41,7 @@
 				>
 					<div class="relative overflow-hidden">
 						<img
-							src={imageUrl(product.image)}
+							src={resolveImage(product.image)}
 							alt="Foto {product.name} — {product.description}"
 							width="600"
 							height="450"
@@ -64,16 +65,17 @@
 							{formatRupiah(product.price)}
 						</p>
 						<div class="mt-4 flex items-center gap-2">
-							<a
-								href="/menu"
+							<button
+								type="button"
+								onclick={() => addToCart(product)}
 								aria-label="Tambah {product.name} ke keranjang"
 								class="btn-lyco-solid inline-flex h-10 flex-1 items-center justify-center gap-1.5 text-sm font-semibold"
 							>
 								<Plus size={16} strokeWidth={2.5} />
 								Tambah
-							</a>
+							</button>
 							<a
-								href="/menu"
+								href="/menu/{product.id}"
 								aria-label="Lihat detail {product.name}"
 								class="btn-lyco inline-flex h-10 items-center justify-center px-4 text-sm font-semibold"
 							>

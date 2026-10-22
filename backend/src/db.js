@@ -44,9 +44,27 @@ export function openDatabase(dbPath = config.dbPath) {
 			data TEXT NOT NULL,
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
-		CREATE TABLE IF NOT EXISTS metadata (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
+		CREATE TABLE IF NOT EXISTS orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			code TEXT UNIQUE NOT NULL,
+			buyer_name TEXT NOT NULL,
+			buyer_session TEXT NOT NULL,
+			table_no TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			items TEXT NOT NULL,
+			total INTEGER NOT NULL,
+			status TEXT NOT NULL DEFAULT 'baru',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(buyer_session);
+		CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+		CREATE TABLE IF NOT EXISTS tables (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			code TEXT UNIQUE NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			active INTEGER NOT NULL DEFAULT 1,
+			position INTEGER NOT NULL DEFAULT 0
 		);
 	`);
 	return db;
@@ -65,93 +83,82 @@ export function rowToProduct(row) {
 	};
 }
 
-function transaction(db, fn) {
-	db.exec('BEGIN IMMEDIATE');
+export function rowToTable(row) {
+	if (!row) return null;
+	return {
+		code: row.code,
+		name: row.name ?? '',
+		active: row.active === 1
+	};
+}
+
+/** Meja bawaan saat DB masih kosong. */
+export const DEFAULT_TABLES = ['1', '2', '3', '4', '5', '6', '7', '8'];
+
+export function rowToOrder(row) {
+	if (!row) return null;
+	let items = [];
 	try {
-		const result = fn();
-		db.exec('COMMIT');
-		return result;
-	} catch (err) {
-		db.exec('ROLLBACK');
-		throw err;
+		items = JSON.parse(row.items ?? '[]');
+	} catch {
+		items = [];
 	}
+	return {
+		id: row.id,
+		code: row.code,
+		buyer_name: row.buyer_name,
+		buyer_session: row.buyer_session,
+		table_no: row.table_no ?? '',
+		note: row.note ?? '',
+		items,
+		total: row.total,
+		status: row.status,
+		created_at: row.created_at,
+		updated_at: row.updated_at
+	};
 }
 
-function insertProducts(db) {
-	const insert = db.prepare(
-		'INSERT INTO products (name, description, price, image, category, featured) VALUES (?, ?, ?, ?, ?, ?)'
-	);
-	for (const p of seedProducts) {
-		insert.run(p.name, p.description ?? '', p.price, p.image ?? '', p.category, p.featured ? 1 : 0);
-	}
-}
-
-/** Seed once per database, not whenever a table happens to be empty. --reset is a full wipe. */
+/** Seed awal: admin + kategori + produk + settings. Idempotent kecuali reset=true. */
 export function seedDatabase(db, { reset = false } = {}) {
-	return transaction(db, () => {
-		if (reset) {
-			db.exec('DELETE FROM products; DELETE FROM categories; DELETE FROM settings; DELETE FROM users; DELETE FROM metadata;');
-		}
-		if (db.prepare("SELECT 1 FROM metadata WHERE key = 'seed_initialized'").get()) return;
+	if (reset) {
+		db.exec('DELETE FROM products; DELETE FROM categories; DELETE FROM settings; DELETE FROM users;');
+	}
 
-		// Older databases had no marker. Their existing data (including deliberately empty
-		// product/category tables) must not be replaced on upgrade.
-		const existing = ['users', 'categories', 'products', 'settings'].some((table) =>
-			db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get()
+	const userCount = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+	if (userCount === 0) {
+		const hash = bcrypt.hashSync(config.adminUsername === 'admin' ? config.adminPassword : config.adminPassword, 10);
+		db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(
+			config.adminUsername,
+			hash
 		);
-		if (!existing) {
-			const hash = bcrypt.hashSync(config.adminPassword, 10);
-			db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(config.adminUsername, hash);
-			const insertCategory = db.prepare('INSERT INTO categories (name, position) VALUES (?, ?)');
-			seedCategories.forEach((name, i) => insertCategory.run(name, i));
-			insertProducts(db);
-			db.prepare('INSERT INTO settings (id, data) VALUES (1, ?)').run(JSON.stringify(defaultSettings));
-		}
-		db.prepare("INSERT INTO metadata (key, value) VALUES ('seed_initialized', '1')").run();
-	});
-}
+	}
 
-/** Reset only the catalog. Restore missing seed categories without disturbing custom categories. */
-export function resetProducts(db) {
-	return transaction(db, () => {
-		db.exec('DELETE FROM products');
-		const names = new Set(db.prepare('SELECT name FROM categories').all().map((row) => row.name));
-		let position = db.prepare('SELECT COALESCE(MAX(position), -1) AS n FROM categories').get().n + 1;
-		const insertCategory = db.prepare('INSERT INTO categories (name, position) VALUES (?, ?)');
-		for (const category of new Set(seedProducts.map((p) => p.category))) {
-			if (!names.has(category)) insertCategory.run(category, position++);
-		}
-		insertProducts(db);
-	});
-}
-
-/** Restore seed categories, retaining custom categories still used by unchanged products. */
-export function resetCategories(db) {
-	return transaction(db, () => {
-		const used = new Set(db.prepare('SELECT DISTINCT category FROM products').all().map((row) => row.category));
-		const defaults = new Set(seedCategories);
-		const existing = db.prepare('SELECT name FROM categories ORDER BY position, id').all().map((row) => row.name);
-		const remove = db.prepare('DELETE FROM categories WHERE name = ?');
-		for (const name of existing) {
-			if (!defaults.has(name) && !used.has(name)) remove.run(name);
-		}
-		const present = new Set(existing);
+	const catCount = db.prepare('SELECT COUNT(*) AS n FROM categories').get().n;
+	if (catCount === 0) {
 		const insert = db.prepare('INSERT INTO categories (name, position) VALUES (?, ?)');
-		const update = db.prepare('UPDATE categories SET position = ? WHERE name = ?');
-		const order = [...seedCategories, ...existing.filter((name) => !defaults.has(name) && used.has(name))];
-		for (const name of used) {
-			if (!defaults.has(name) && !order.includes(name)) order.push(name);
-		}
-		order.forEach((name, position) => {
-			if (present.has(name)) update.run(position, name);
-			else insert.run(name, position);
-		});
-	});
-}
+		seedCategories.forEach((name, i) => insert.run(name, i));
+	}
 
-export function resetSettings(db) {
-	db.prepare("INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')")
-		.run(JSON.stringify(defaultSettings));
+	const prodCount = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+	if (prodCount === 0) {
+		const insert = db.prepare(
+			'INSERT INTO products (name, description, price, image, category, featured) VALUES (?, ?, ?, ?, ?, ?)'
+		);
+		for (const p of seedProducts) {
+			insert.run(p.name, p.description ?? '', p.price, p.image ?? '', p.category, p.featured ? 1 : 0);
+		}
+	}
+
+	const settingsCount = db.prepare('SELECT COUNT(*) AS n FROM settings WHERE id = 1').get().n;
+	if (settingsCount === 0) {
+		db.prepare('INSERT INTO settings (id, data) VALUES (1, ?)').run(JSON.stringify(defaultSettings));
+	}
+
+	const tableCount = db.prepare('SELECT COUNT(*) AS n FROM tables').get().n;
+	if (tableCount === 0) {
+		const insert = db.prepare('INSERT INTO tables (code, position) VALUES (?, ?)');
+		DEFAULT_TABLES.forEach((code, i) => insert.run(code, i));
+	}
 }
 
 export function readSettings(db) {
@@ -166,7 +173,8 @@ export function readSettings(db) {
 
 export function writeSettings(db, next) {
 	const merged = { ...defaultSettings, ...next };
-	db.prepare("INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')")
-		.run(JSON.stringify(merged));
+	db.prepare("UPDATE settings SET data = ?, updated_at = datetime('now') WHERE id = 1").run(
+		JSON.stringify(merged)
+	);
 	return merged;
 }

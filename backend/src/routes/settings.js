@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ah, validate } from '../middleware/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { settingsSchema } from '../schemas.js';
-import { readSettings, resetSettings, writeSettings } from '../db.js';
+import { readSettings, seedDatabase, writeSettings } from '../db.js';
 
 export function settingsRoutes(db) {
 	const r = Router();
@@ -28,7 +28,8 @@ export function settingsRoutes(db) {
 		'/reset',
 		requireAuth,
 		ah(async (_req, res) => {
-			resetSettings(db);
+			db.prepare('DELETE FROM settings WHERE id = 1').run();
+			seedDatabase(db);
 			return res.json(readSettings(db));
 		})
 	);
